@@ -160,6 +160,14 @@ bool check_exe(char* input, struct Shell* shell){
     return true;
 }
 
+bool check_bg(char* input, struct Shell* shell){
+    // Check if the last char is % if so then make a bg job
+    // Fork and not wait
+    // have the status as background
+    // create handler for SIGCHILD which then calls wait() or waitpid(). 
+    return true;
+}
+
 void take_action(char* input, struct Shell* shell){
     if (check_builtin(input, shell)){
         debug_msg("Is a builtin func");
@@ -167,6 +175,9 @@ void take_action(char* input, struct Shell* shell){
     }else {
         if (check_exe(input, shell)) {
             debug_msg("Is a executable file");
+            return;
+        }else if (check_bg(input, shell)){
+            debug("Is a bg file");
             return;
         }
     }
