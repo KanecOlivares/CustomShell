@@ -61,13 +61,25 @@ void add_job(struct Shell* shell, struct Job job) {
     shell->job_count++;
 }
 
-void sigint_handler(int signo) {
+void sigint_handler(int signo) { // handling creating a new foreground process 
     if (foreground_pid > 0) {
         kill(foreground_pid, SIGINT); // send SIGINT to the foreground process
     }
 }
 
+void sigchld_handler(int signo) {
+    /*
+    Handles sigchild signal
+    */
+    while (waitpid(-1, NULL, WNOHANG) > 0) {
+        // clean up all finished child processes
+    }
+}
+
 void get_input(char* input, size_t size){
+    /*
+    Standarized format for getting input from User
+    */
     printf("prompt > ");
     if (fgets(input, size, stdin)) {
         size_t len = strlen(input);
@@ -81,10 +93,19 @@ void get_input(char* input, size_t size){
 }
 
 bool is_same(char* input, const char* other){
+    /*
+    Are two strings equivalent
+    */
     return strcmp(input, other) == 0;
 }
 
 void pwd(){
+    /*
+    Shell command to print out current working directory's path
+    i.e 
+    prompt > pwd
+    /Users/user-name/dir1/dir2/.../curr-workdir
+    */
     char cwd[MAX_PATH_LEN];
     if (getcwd(cwd, sizeof(cwd)) != NULL) {
         printf("%s\n", cwd);
@@ -126,28 +147,46 @@ bool check_builtin(char* input, struct Shell* shell){
     return false; // Not QUIT, PWD or CD
 }
 
-bool check_exe(char* input, struct Shell* shell){
+bool is_fork_error(int pid){
+    return pid < 0;
+}
+
+bool is_child(int pid){
+    return pid == 0;
+}
+
+char* compute_exe_path(char* input){
     char exe_path[MAX_FILENAME_LEN];
     snprintf(exe_path, sizeof(exe_path), "./%s", input); // adding ./ to path
+    return exe_path;
+}
 
-    if (access(exe_path, X_OK) != 0){
+bool is_exe(char* exe_path){
+    return (access(exe_path, X_OK) != 0);
+}
+
+bool check_exe(char* input, struct Shell* shell){
+    char* exe_path = compute_exe_path(input);
+
+    if (!is_exe(exe_path)){
         debug_msg("Not executable!!!"); // Not an error can be another command
         return false;
     }
     
     pid_t pid = fork();
     
-    if (pid < 0) {
+    if (is_fork_error(pid)) {
         throw_error("check_exe", "Fork didn't work");
     }
-    else if (pid == 0) { // child
+    else if (is_child(pid)) {
         // Child process: run executable
         pid_t my_pid = getpid();
         setpgid(0, 0);  // make new group
         execl(exe_path, input, (char*)NULL);
         throw_error("check_exe", "Error in execl. It returned");
         exit(127);
-    }else { // parent
+    }else {
+        // Parent process waits for exe to stop executing
         setpgid(pid, pid);
         struct Job job = new_job(shell->job_count + 1, pid, pid, "Foreground");
         add_job(shell, job);
@@ -164,8 +203,9 @@ bool check_bg(char* input, struct Shell* shell){
     // Check if the last char is % if so then make a bg job
     // Fork and not wait
     // have the status as background
-    // create handler for SIGCHILD which then calls wait() or waitpid(). 
-    return true;
+    // create handler for SIGCHILD which then calls wait() or waitpid().
+    debug_msg("check_bg not implemented yet!!!"); 
+    return false;
 }
 
 void take_action(char* input, struct Shell* shell){
@@ -177,18 +217,23 @@ void take_action(char* input, struct Shell* shell){
             debug_msg("Is a executable file");
             return;
         }else if (check_bg(input, shell)){
-            debug("Is a bg file");
+            debug_msg("Is a bg file");
             return;
         }
     }
 }
 
+
+char user_input[MAX_INPUT_LEN];
+struct Shell shell;
+
+void init_shell(){
+    shell.job_count = 0;
+}
+
 int main(){
     signal(SIGINT, sigint_handler);
-
-    char user_input[MAX_INPUT_LEN];
-    struct Shell shell;
-    shell.job_count = 0;
+    init_shell();
     do{
         get_input(user_input, MAX_INPUT_LEN);
         take_action(user_input, &shell);
